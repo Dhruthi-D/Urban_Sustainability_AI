@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>Bangalore Sustainability Map</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #f5f6fa;
+    }
+
+    /* --- Header Styling --- */
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #273c75;
+      color: white;
+      padding: 12px 24px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .nav-brand {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: #fff;
+      text-decoration: none;
+    }
+
+    .nav-button {
+      background: #44bd32;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 6px;
+      color: white;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: 0.2s ease-in-out;
+      text-decoration: none;
+      margin-left: 6px;
+    }
+
+    .nav-button:hover {
+      background: #4cd137;
+      transform: translateY(-2px);
+    }
+
+    /* --- Map Styling --- */
+    #map {
+      height: calc(100vh - 56px);
+      width: 100vw;
+    }
+
+    .leaflet-popup-content {
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 14px;
+    }
+
+    /* Dropdown explanation styling */
+    .dropdown {
+      margin-top: 8px;
+    }
+
+    .dropdown-btn {
+      background-color: #40739e;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .dropdown-btn:hover {
+      background-color: #487eb0;
+    }
+
+    .dropdown-content {
+      display: none;
+      background: #f5f6fa;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 8px;
+      margin-top: 6px;
+      font-size: 13px;
+      color: #333;
+    }
+
+    .dropdown-content.show {
+      display: block;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Header -->
+  <nav style="position: fixed; top: 0; left: 0; right: 0; height: 70px; background: linear-gradient(90deg, #273c75, #40739e); display: flex; align-items: center; justify-content: space-between; padding: 0 25px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+    <a href="/" class="nav-brand" style="color: white; text-decoration: none; font-size: 1.5rem; font-weight: 600; display: flex; align-items: center; gap: 10px;">
+      <span style="font-size: 1.8rem;">🌱</span> Urban Sustainability AI
+    </a>
+    
+    <div style="display: flex; gap: 12px;">
+      <a href="/" style="text-decoration: none;">
+        <button style="padding: 10px 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; cursor: pointer; transition: all 0.3s ease; font-weight: 500;">
+          <i class="fas fa-home"></i> Home
+        </button>
+      </a>
+      <a href="/impact" style="text-decoration: none;">
+        <button style="padding: 10px 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; cursor: pointer; transition: all 0.3s ease; font-weight: 500;">
+          <i class="fas fa-chart-line"></i> Impact
+        </button>
+      </a>
+      <a href="/report" style="text-decoration: none;">
+        <button style="padding: 10px 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; cursor: pointer; transition: all 0.3s ease; font-weight: 500;">
+          <i class="fas fa-file-alt"></i> Report
+        </button>
+      </a>
+    </div>
+  </nav>
+  
+  <!-- Search box -->
+  <div
+    style="position:fixed; bottom:20px; left:20px; z-index:1000; background:white; padding:12px; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+    <input id="placeSearch" type="text" placeholder="🔍 Search place..."
+      style="width:180px; padding:8px 12px; border:1px solid #ddd; border-radius:6px; font-size: 14px;">
+    <button id="searchBtn"
+      style="padding:8px 12px; background:#273c75; border:none; border-radius:6px; color:white; cursor:pointer; margin-left: 8px; font-weight: 500;">Go</button>
+  </div>
+
+  <!-- Map -->
+  <div id="map" style="height: calc(100vh - 70px); position: relative; top: 70px;"></div>
+
+  <script>
+    // Initialize map
+    const map = L.map('map').setView([12.97, 77.59], 11);
+
+    // Base OSM layer
+    const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // TomTom Traffic Layer
+    const trafficLayer = L.tileLayer(
+      `https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=lF9KC9U2sLDxh9u8IlQoILfdkvJfetna`,
+      {
+        attribution: '&copy; TomTom Traffic',
+        opacity: 0.7
+      }
+    ).addTo(map);
+
+    // Highlight layer
+    const highlightGroup = L.layerGroup().addTo(map);
+    L.control.layers({ "OpenStreetMap": osmLayer }, { "Traffic": trafficLayer }).addTo(map);
+
+    const bandMapping = {
+      "Band_1": "NDVI (Vegetation Index)",
+      "Band_2": "NDBI (Built-up Index)",
+      "Band_3": "Albedo (Surface Reflectivity)",
+      "Band_4": "LST (Land Surface Temperature)"
+    };
+
+    // --- Place Search ---
+    document.getElementById("searchBtn").addEventListener("click", async () => {
+      const place = document.getElementById("placeSearch").value.trim();
+      if (!place) return alert("Enter a place name");
+
+      try {
+        const resp = await fetch(`/search_place?name=${encodeURIComponent(place)}`);
+        const data = await resp.json();
+
+        if (data.error) {
+          alert(data.error);
+          return;
+        }
+
+        highlightGroup.clearLayers();
+        const layer = L.geoJSON(data.geometry, {
+          style: { color: "#0097e6", weight: 2, fillOpacity: 0.1 }
+        }).addTo(highlightGroup);
+
+        const bounds = layer.getBounds();
+        map.fitBounds(bounds);
+
+        const center = bounds.getCenter();
+        const popupContent = `
+          <b>Place:</b> ${place}<br>
+          <b>Average Sustainability Score:</b> ${data.average_score} / 100<br>
+          <i>(${data.samples} samples from ${data.layer})</i>
+        `;
+        L.popup().setLatLng(center).setContent(popupContent).openOn(map);
+      } catch (err) {
+        console.error(err);
+        alert("Error fetching place data");
+      }
+    });
+
+    // --- Map click handler ---
+    map.on('click', async (e) => {
+      const { lat, lng } = e.latlng;
+      const response = await fetch(`/get_params?lat=${lat}&lon=${lng}`);
+      const data = await response.json();
+
+      // 🚫 Skip popup for non-lake natural water (e.g., Vrishabhavathi river)
+      if (
+        data.natural_type === "water" &&
+        !(
+          (data.name && /lake|kere|tank/i.test(data.name)) ||
+          (data.landuse_type && /lake|kere|tank/i.test(data.landuse_type))
+        )
+      ) {
+        console.log("Skipping non-lake natural water region");
+        return;
+      }
+
+      // --- Build popup content ---
+      let content = `<b>Lat:</b> ${lat.toFixed(4)}, <b>Lon:</b> ${lng.toFixed(4)}<br><hr>`;
+
+      for (const [band, value] of Object.entries(data.raster_bands)) {
+        const name = bandMapping[band] || band;
+        content += `<b>${name}:</b> ${value.toFixed(4)}<br>`;
+      }
+
+      if (data.features_present.length > 0) {
+        content += `<hr><b>Features:</b> ${data.features_present.join(", ")}`;
+        if (data.landuse_type) content += `<br><b>Landuse:</b> ${data.landuse_type}`;
+        if (data.natural_type) content += `<br><b>Natural:</b> ${data.natural_type}`;
+      } else {
+        content += `<hr><i>No vector features present here</i>`;
+      }
+
+      if (data.sustainability_score !== undefined) {
+        content += `<hr><b>Sustainability Score:</b> ${data.sustainability_score} / 100`;
+
+        // --- Dropdown for LLM explanation ---
+        content += `
+          <div class="dropdown">
+            <button class="dropdown-btn" onclick="toggleExplanation(this)">Show LLM Explanation ▼</button>
+            <div class="dropdown-content">Generating explanation...</div>
+          </div>
+        `;
+      }
+
+      highlightGroup.clearLayers();
+      for (const [layerName, geojson] of Object.entries(data.highlighted_geojson)) {
+        L.geoJSON(geojson, {
+          style: { color: 'red', weight: 2, opacity: 0.7 },
+          pointToLayer: (feature, latlng) =>
+            L.circleMarker(latlng, { radius: 5, color: 'red', fillOpacity: 0.7 })
+        }).addTo(highlightGroup);
+      }
+
+      L.popup().setLatLng(e.latlng).setContent(content).openOn(map);
+
+      // --- Call LLM for explanation ---
+      const payload = {
+        score: data.sustainability_score,
+        landuse: data.landuse_type,
+        features: data.features_present,
+        coordinates: data.coordinates,
+        raster_bands: data.raster_bands
+      };
+
+      try {
+        const res = await fetch("/explain_sustainability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const llmData = await res.json();
+
+        // Replace "Generating..." with real explanation
+        document.querySelector(".dropdown-content").textContent = llmData.explanation;
+      } catch (err) {
+        console.error(err);
+        document.querySelector(".dropdown-content").textContent =
+          "LLM explanation unavailable right now.";
+      }
+    });
+
+    // --- Toggle dropdown ---
+    function toggleExplanation(btn) {
+      const content = btn.nextElementSibling;
+      content.classList.toggle("show");
+    }
+  </script>
+
+</body>
+
+</html>

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Urban Sustainability – Report Generator</title>
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- html2canvas & jsPDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            display: flex;
+            height: 100vh;
+        }
+
+        #sidebar {
+            width: 350px;
+            background: #f8f9fa;
+            padding: 20px;
+            border-right: 2px solid #ccc;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #map {
+            flex-grow: 1;
+        }
+
+        button {
+            padding: 10px;
+            margin-top: 10px;
+            cursor: pointer;
+            background: #2b7bff;
+            border: none;
+            color: white;
+            border-radius: 6px;
+            font-size: 15px;
+        }
+
+        button:hover {
+            background: #1f5fcc;
+        }
+
+        .place {
+            background: #eee;
+            padding: 5px;
+            margin-top: 5px;
+            border-radius: 4px;
+        }
+
+        #reportOutput {
+            margin-top: 15px;
+            white-space: pre-line;
+        }
+
+        /* ------------ POPUP MODAL ------------ */
+        #chartModal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.65);
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        #chartBox {
+            background: white;
+            padding: 25px;
+            width: 80%;
+            height: 85%;
+            border-radius: 10px;
+            position: relative;
+            overflow-y: auto;
+        }
+
+        #closeChart {
+            position: absolute;
+            right: 15px;
+            top: 10px;
+            cursor: pointer;
+            font-size: 26px;
+            color: #333;
+            font-weight: bold;
+        }
+
+        .chartContainer {
+            margin-top: 30px;
+            width: 100%;
+            height: 350px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- SIDEBAR -->
+    <div id="sidebar">
+        <div class="header" style="background: linear-gradient(90deg, #273c75, #40739e); color: #fff; padding: 16px 20px; margin-bottom: 20px; font-size: 20px; font-weight: 600; text-align: left; display: flex; align-items: center; justify-content: space-between;">
+            <span>📊 Sustainability Report</span>
+            <div style="display: flex; gap: 8px;">
+                <a href="/" style="text-decoration: none;">
+                    <button style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 6px 12px; border-radius: 6px; font-weight: 500; cursor: pointer; transition: background 0.3s;">Home</button>
+                </a>
+                <a href="/impact" style="text-decoration: none;">
+                    <button style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 6px 12px; border-radius: 6px; font-weight: 500; cursor: pointer; transition: background 0.3s;">Impact</button>
+                </a>
+            </div>
+        </div>
+
+        <p>Click on the map to select up to 5 locations.</p>
+
+        <div id="selectedList"></div>
+
+        <button id="generalBtn">Generate Generalised Report</button>
+
+        <div id="reportOutput"></div>
+
+        <button id="openChartBtn" style="display:none; background:#ff9800;">
+            View Comparison Charts
+        </button>
+
+        <button id="downloadPdfBtn" style="display:none; background:#4caf50;">
+            Download PDF Report
+        </button>
+    </div>
+
+    <!-- MAP -->
+    <div id="map"></div>
+
+    <!-- POPUP MODAL -->
+    <div id="chartModal">
+        <div id="chartBox">
+            <span id="closeChart">&times;</span>
+
+            <h2 style="text-align:center;">Environmental Indicators</h2>
+            <div class="chartContainer">
+                <canvas id="envChartCanvas"></canvas>
+            </div>
+
+            <h2 style="text-align:center;">Heat & Sustainability Indicators</h2>
+            <div class="chartContainer">
+                <canvas id="heatChartCanvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden coordinates container for PDF -->
+    <div id="coordsBlock" style="display:none;"></div>
+
+<script>
+/* ---------- MAP SETUP ---------- */
+const map = L.map('map').setView([12.9716, 77.5946], 12);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+}).addTo(map);
+
+let selectedPlaces = [];
+let markers = [];
+let maxPlaces = 5;
+
+map.on("click", function (e) {
+    if (selectedPlaces.length >= maxPlaces) {
+        alert("You can only select 5 places.");
+        return;
+    }
+
+    let lat = e.latlng.lat;
+    let lon = e.latlng.lng;
+
+    fetch(`/get_params?lat=${lat}&lon=${lon}`)
+        .then(res => res.json())
+        .then(data => {
+
+            let index = selectedPlaces.length + 1;
+
+            let place = {
+                id: index,
+                name: data.name || `Point ${index}`,
+                lat,
+                lon,
+                ndbi: data.ndbi,
+                ndvi: data.ndvi,
+                albedo: data.albedo,
+                lst: data.lst,
+                score: data.score
+            };
+
+            selectedPlaces.push(place);
+
+            let marker = L.marker([lat, lon]).addTo(map);
+            marker.bindPopup(place.name).openPopup();
+            markers.push(marker);
+
+            updateSelectedList();
+        });
+});
+
+function updateSelectedList() {
+    const list = document.getElementById("selectedList");
+    list.innerHTML = "";
+
+    coordsHTML = "";
+
+selectedPlaces.forEach((p, i) => {
+    list.innerHTML += `<div class="place">${i + 1}. ${p.name}</div>`;
+    coordsHTML += `Point ${i + 1}: ${p.name}
+Latitude: ${p.lat.toFixed(5)}
+Longitude: ${p.lon.toFixed(5)}
+
+`;
+});
+
+
+    document.getElementById("coordsBlock").innerHTML = coordsHTML;
+}
+
+/* ---------- GENERAL REPORT ---------- */
+document.getElementById("generalBtn").onclick = function () {
+    if (selectedPlaces.length === 0) {
+        alert("Select at least 1 place!");
+        return;
+    }
+
+    fetch("/general_report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ places: selectedPlaces })
+    })
+        .then(r => r.json())
+        .then(data => {
+            let cleanedInsight = data.insight.replace(/\*\*(.*?)\*\*/g, '$1');
+
+            document.getElementById("reportOutput").innerHTML =
+            `<h3>AI Insights</h3><p>${cleanedInsight}</p>`;
+
+            window.chartBars = data.bars;
+
+            document.getElementById("openChartBtn").style.display = "block";
+            document.getElementById("downloadPdfBtn").style.display = "block";
+        });
+};
+
+/* ---------- POPUP CHARTS ---------- */
+let envChart, heatChart;
+
+function drawCharts() {
+    const labels = window.chartBars.map(b => b.name);
+
+    if (envChart) envChart.destroy();
+    if (heatChart) heatChart.destroy();
+
+    envChart = new Chart(document.getElementById("envChartCanvas"), {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [
+                { label: "NDVI", data: window.chartBars.map(b => b.ndvi) },
+                { label: "NDBI", data: window.chartBars.map(b => b.ndbi) },
+                { label: "Albedo", data: window.chartBars.map(b => b.albedo) }
+            ]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    heatChart = new Chart(document.getElementById("heatChartCanvas"), {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [
+                { label: "LST (°C)", data: window.chartBars.map(b => b.lst) },
+                { label: "Sustainability Score", data: window.chartBars.map(b => b.score) }
+            ]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+}
+
+document.getElementById("openChartBtn").onclick = () => {
+    document.getElementById("chartModal").style.display = "flex";
+    setTimeout(drawCharts, 300);
+};
+
+document.getElementById("closeChart").onclick = () => {
+    document.getElementById("chartModal").style.display = "none";
+};
+
+/* ---------- PROFESSIONAL PDF EXPORT ---------- */
+document.getElementById("downloadPdfBtn").addEventListener("click", async () => {
+
+const { jsPDF } = window.jspdf;
+
+const pdf = new jsPDF({
+    orientation: "portrait",
+    unit: "pt",
+    format: "a4"
+});
+
+const pageWidth = pdf.internal.pageSize.getWidth();
+const margin = 40;
+let y = margin;
+
+/* -------- TITLE -------- */
+pdf.setFont("helvetica", "bold");
+pdf.setFontSize(22);
+pdf.text("Urban Sustainability Report", pageWidth / 2, y, { align: "center" });
+y += 35;
+
+pdf.setDrawColor(150);
+pdf.line(margin, y, pageWidth - margin, y);
+y += 20;
+
+/* -------- COORDINATES BLOCK -------- */
+pdf.setFont("helvetica", "bold");
+pdf.setFontSize(14);
+pdf.text("Selected Coordinates", margin, y);
+y += 18;
+
+pdf.setFont("helvetica", "normal");
+pdf.setFontSize(11);
+
+const coordsLines = document.getElementById("coordsBlock").innerText.split("\n");
+
+coordsLines.forEach(line => {
+    pdf.text(line.trim(), margin + 10, y);
+    y += 14;
+});
+
+y += 18;
+
+/* -------- AI INSIGHTS -------- */
+let insights = document.getElementById("reportOutput").innerText.trim();
+
+// remove duplicate header if present
+insights = insights.replace(/^AI Insights\s*/i, "");
+if (insights !== "") {
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(14);
+    pdf.text("AI Insights", margin, y);
+    y += 18;
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(11);
+
+    const insightLines = pdf.splitTextToSize(insights, pageWidth - margin * 2);
+    pdf.text(insightLines, margin, y);
+
+    y += insightLines.length * 13 + 25;
+}
+
+/* -------- NEW PAGE FOR CHARTS -------- */
+pdf.addPage();
+y = margin;
+
+/* -------- ENVIRONMENTAL INDICATORS -------- */
+pdf.setFont("helvetica", "bold");
+pdf.setFontSize(14);
+pdf.text("Environmental Indicators", pageWidth / 2, y, { align: "center" });
+y += 20;
+
+const envCanvas = document.getElementById("envChartCanvas");
+const envImg = envCanvas.toDataURL("image/png", 1.0);
+
+pdf.addImage(envImg, "PNG", margin, y, pageWidth - margin * 2, 260);
+y += 280;
+
+/* -------- HEAT + SUSTAINABILITY -------- */
+pdf.setFont("helvetica", "bold");
+pdf.setFontSize(14);
+pdf.text("Heat & Sustainability Indicators", pageWidth / 2, y, { align: "center" });
+y += 20;
+
+const heatCanvas = document.getElementById("heatChartCanvas");
+const heatImg = heatCanvas.toDataURL("image/png", 1.0);
+
+pdf.addImage(heatImg, "PNG", margin, y, pageWidth - margin * 2, 260);
+
+/* -------- FOOTER WITH PAGE NUMBERS -------- */
+const totalPages = pdf.internal.getNumberOfPages();
+
+for (let i = 1; i <= totalPages; i++) {
+    pdf.setPage(i);
+    pdf.setFontSize(10);
+    pdf.setTextColor(120);
+
+    pdf.text(
+        `Page ${i} of ${totalPages}`,
+        pageWidth / 2,
+        pdf.internal.pageSize.getHeight() - 20,
+        { align: "center" }
+    );
+}
+
+pdf.save("Sustainability_Report.pdf");
+});
+
+
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Urban Project Impact</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      height: 100vh;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: #f5f6fa;
+    }
+    #map { flex: 2; }
+
+    #sidebar {
+      flex: 1;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      box-shadow: -2px 0 8px rgba(0,0,0,0.1);
+      position: relative;
+    }
+
+    /* --- Header bar --- */
+    .header {
+      background: #273c75;
+      color: #fff;
+      padding: 14px 20px;
+      font-size: 20px;
+      font-weight: 600;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .home-btn {
+      background: #fff;
+      color: #273c75;
+      border: none;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+      width: 60px; /* 🔹 Fixed narrow width */
+      text-align: center;
+      flex-shrink: 0;   /* fixed smaller button width */
+    }
+    .home-btn:hover {
+      background: #dcdde1;
+    }
+
+    /* --- Content --- */
+    .content {
+      padding: 20px;
+      flex: 1;
+    }
+
+    label { display: block; margin-top: 10px; font-weight: bold; }
+    select, input, button {
+      width: 100%;
+      margin-top: 5px;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      font-size: 15px;
+    }
+
+    button.predict-btn {
+      background: #273c75;
+      color: #fff;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 15px;
+      border: none;
+    }
+    button.predict-btn:hover { background: #40739e; }
+
+    .output {
+      background: #f1f2f6;
+      border-radius: 10px;
+      padding: 15px;
+      margin-top: 15px;
+      font-size: 14px;
+      color: #2f3640;
+    }
+    .positive { color: green; font-weight: bold; }
+    .negative { color: red; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+
+  <div id="sidebar">
+    <div class="header" style="background: linear-gradient(90deg, #273c75, #40739e); color: #fff; padding: 16px 20px; font-size: 20px; font-weight: 600; text-align: left; display: flex; align-items: center; justify-content: space-between;">
+      <span>Project Impact Analysis</span>
+      <div style="display: flex; gap: 8px;">
+        <button class="home-btn" onclick="window.location.href='/'" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 6px 12px; border-radius: 6px; font-weight: 500; cursor: pointer; transition: background 0.3s;">Home</button>
+        <button class="home-btn" onclick="window.location.href='/report'" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 6px 12px; border-radius: 6px; font-weight: 500; cursor: pointer; transition: background 0.3s;">Report</button>
+      </div>
+    </div>
+
+    <div class="content">
+      <label for="project_type">Project Type:</label>
+      <select id="project_type" onchange="toggleOptionalInputs()">
+        <option value="Park">Park</option>
+        <option value="Residential">Residential</option>
+        <option value="Mall">Mall</option>
+        <option value="Commercial Complex">Commercial Complex</option>
+      </select>
+
+      <div id="optional_inputs">
+        <div id="material_section">
+          <label for="material">Material:</label>
+          <select id="material">
+            <option value="Concrete">Concrete</option>
+            <option value="Glass">Glass</option>
+            <option value="Steel">Steel</option>
+          </select>
+        </div>
+
+        <label for="area">Area (m²):</label>
+        <input type="number" id="area" placeholder="e.g. 500" value="500">
+
+        <div id="height_section">
+          <label for="height">Height (m):</label>
+          <input type="number" id="height" placeholder="e.g. 10" value="10">
+        </div>
+      </div>
+
+      <button class="predict-btn" onclick="analyzeImpact()">Enable Map Click & Predict</button>
+
+      <div class="output" id="outputBox">Click on the map to select a location.</div>
+    </div>
+  </div>
+
+  <script>
+    const map = L.map('map').setView([12.9716, 77.5946], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+  
+    let marker = null;
+    let clickEnabled = false;
+  
+    function toggleOptionalInputs() {
+      const project = document.getElementById('project_type').value;
+      document.getElementById('material_section').style.display =
+        (project === 'Park') ? 'none' : 'block';
+      document.getElementById('height_section').style.display =
+        (project === 'Park') ? 'none' : 'block';
+    }
+  
+    map.on('click', async function (e) {
+      if (!clickEnabled) return;
+  
+      const lat = e.latlng.lat;
+      const lon = e.latlng.lng;
+      if (marker) map.removeLayer(marker);
+      marker = L.marker([lat, lon]).addTo(map);
+  
+      document.getElementById('outputBox').innerHTML = "Processing prediction...";
+  
+      const project_type = document.getElementById('project_type').value;
+      const material = document.getElementById('material')?.value || 'N/A';
+      const area = parseFloat(document.getElementById('area')?.value || 500);
+      const height = parseFloat(document.getElementById('height')?.value || 10);
+  
+      const payload = { lat, lon, project_type, material, area, height };
+  
+      try {
+        // ---- STEP 1: Get numerical prediction quickly ----
+        const res = await fetch('/predict_project_impact', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+  
+        // Show immediate numeric result
+        document.getElementById('outputBox').innerHTML = `
+          <b>Coordinates:</b> (${lat.toFixed(5)}, ${lon.toFixed(5)})<br>
+          <b>Project Type:</b> ${project_type}<br>
+          ${project_type !== 'Park' ? `<b>Material:</b> ${material}<br>` : ''}
+          <b>Area:</b> ${area} m²<br>
+          ${project_type !== 'Park' ? `<b>Height:</b> ${height} m<br>` : ''}
+          <b>Current Score:</b> ${result.current_score}<br>
+          <b>Predicted ΔScore:</b> ${result.predicted_delta}<br>
+          <b>Predicted Score:</b> ${result.predicted_score}<br>
+          <b>Impact:</b> <span class="${result.impact === 'Positive' ? 'positive' : 'negative'}">${result.impact}</span>
+          <hr>
+          <b>AI Explanation:</b><br>
+          <div id="llmBox" style="background:#f9f9f9; padding:8px; border-radius:6px; margin-top:5px; font-size:13px;">
+            Generating explanation...
+          </div>
+        `;
+  
+        // ---- STEP 2: Fetch LLM explanation asynchronously ----
+        fetch('/get_impact_explanation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project_type, material,
+            landuse: result.input.Landuse,
+            area, height,
+            current_score: result.current_score,
+            predicted_score: result.predicted_score,
+            delta: result.predicted_delta,
+            ndvi: result.input.NDVI,
+            ndbi: result.input.NDBI,
+            lst: result.input.LST,
+            albedo: result.input.ALBEDO
+          })
+        })
+        .then(r => r.json())
+        .then(data => {
+          document.getElementById('llmBox').innerHTML = data.explanation.replace(/\n/g, "<br>");
+        })
+        .catch(() => {
+          document.getElementById('llmBox').innerHTML = "LLM explanation unavailable right now.";
+        });
+  
+      } catch (err) {
+        document.getElementById('outputBox').innerHTML = "Error while predicting: " + err;
+      }
+    });
+  
+    function analyzeImpact() {
+      clickEnabled = true;
+      alert("Click on the map to select a location for prediction.");
+    }
+  
+    toggleOptionalInputs();
+  </script>
+  
+
+</body>
+</html>

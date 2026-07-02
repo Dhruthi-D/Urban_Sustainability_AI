@@ -1,0 +1,35 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# GeoTIFF and raster metadata
+*.tif
+*.tiff
+*.aux.xml
+
+# Shapefiles
+*.shp
+*.shx
+*.dbf
+*.prj
+
+# Processed and raw data folders
+data_raw/
+data_processed/
+
+# Large binaries
+*.whl
+
+# Temporary / output files
+delta_score_lgb_chunked.txt
+
+#large files
+training_dataset.csv
